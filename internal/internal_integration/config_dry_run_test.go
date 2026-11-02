@@ -12,6 +12,7 @@ var _ = Describe("when config.DryRun is enabled", func() {
 		conf.SkipStrings = []string{"E"}
 
 		RunFixture("dry run", func() {
+			ReportBeforeSuite(func(report Report) { rt.RunWithData("report-before-suite", "report", report) })
 			BeforeSuite(rt.T("before-suite"))
 			BeforeEach(rt.T("bef"))
 			ReportBeforeEach(func(_ SpecReport) { rt.Run("report-before-each") })
@@ -20,7 +21,7 @@ var _ = Describe("when config.DryRun is enabled", func() {
 				It("B", rt.T("B", func() { F() }))
 				PIt("C", rt.T("C", func() { F() }))
 				It("D", rt.T("D"))
-				It("E", rt.T("D"))
+				It("E", rt.T("E"))
 			})
 			AfterEach(rt.T("aft"))
 			AfterSuite(rt.T("after-suite"))
@@ -29,8 +30,22 @@ var _ = Describe("when config.DryRun is enabled", func() {
 		})
 	})
 
-	It("does not run any tests", func() {
-		Ω(rt).Should(HaveTrackedNothing())
+	It("does not run any tests but does invoke reporters", func() {
+		Ω(rt).Should(HaveTracked(
+			"report-before-suite",                     //BeforeSuite
+			"report-before-each", "report-after-each", //A
+			"report-before-each", "report-after-each", //B
+			"report-before-each", "report-after-each", //C
+			"report-before-each", "report-after-each", //D
+			"report-before-each", "report-after-each", //E
+			"report-after-suite", //AfterSuite
+		))
+	})
+
+	It("correctly calculates the number of specs that will run", func() {
+		report := rt.DataFor("report-before-suite")["report"].(Report)
+		Ω(report.PreRunStats.SpecsThatWillRun).Should(Equal(3))
+		Ω(report.PreRunStats.TotalSpecs).Should(Equal(5))
 	})
 
 	It("reports on the tests (both that they will run and that they did run) and honors skip state", func() {

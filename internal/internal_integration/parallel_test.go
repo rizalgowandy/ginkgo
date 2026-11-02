@@ -14,7 +14,7 @@ var _ = Describe("Running tests in parallel", func() {
 	var conf2 types.SuiteConfig
 	var reporter2 *FakeReporter
 	var rt2 *RunTracker
-	var serialValidator chan interface{}
+	var serialValidator chan any
 
 	var fixture = func(rt *RunTracker, proc int) {
 		SynchronizedBeforeSuite(func() []byte {
@@ -43,15 +43,17 @@ var _ = Describe("Running tests in parallel", func() {
 			time.Sleep(10 * time.Millisecond)
 		}))
 		Context("Ordered", Ordered, func() {
+			BeforeAll(rt.T("OBA"))
 			It("OA", rt.T("OA", func() {
 				time.Sleep(10 * time.Millisecond)
 			}))
 			It("OB", rt.T("OB", func() {
 				time.Sleep(10 * time.Millisecond)
 			}))
-			It("OC", rt.T("OC", func() {
+			It("OC", MustPassRepeatedly(3), rt.T("OC", func() {
 				time.Sleep(10 * time.Millisecond)
 			}))
+			AfterAll(rt.T("OAA"))
 		})
 		It("G", Serial, rt.T("G", func() {
 			Ω(serialValidator).Should(BeClosed())
@@ -66,13 +68,19 @@ var _ = Describe("Running tests in parallel", func() {
 			time.Sleep(10 * time.Millisecond)
 		}))
 		Context("Ordered and Serial", Ordered, Serial, func() {
+			BeforeAll(rt.T("OSBA", func() {
+				Ω(serialValidator).Should(BeClosed())
+			}))
 			It("OSA", rt.T("OSA", func() {
 				Ω(serialValidator).Should(BeClosed())
 				time.Sleep(10 * time.Millisecond)
 			}))
-			It("OSB", rt.T("OSB", func() {
+			It("OSB", MustPassRepeatedly(3), rt.T("OSB", func() {
 				Ω(serialValidator).Should(BeClosed())
 				time.Sleep(10 * time.Millisecond)
+			}))
+			AfterAll(rt.T("OSAA", func() {
+				Ω(serialValidator).Should(BeClosed())
 			}))
 		})
 
@@ -84,7 +92,7 @@ var _ = Describe("Running tests in parallel", func() {
 	}
 
 	BeforeEach(func() {
-		serialValidator = make(chan interface{})
+		serialValidator = make(chan any)
 		//set up configuration for proc 1 and proc 2
 
 		//SetUpForParallel starts up a server, sets up a client, and sets up the exitChannels map - they're all cleaned up automatically after the test
@@ -116,16 +124,16 @@ var _ = Describe("Running tests in parallel", func() {
 		exit1 := exitChannels[1] //avoid a race around exitChannels access in a separate goroutine
 		//now launch suite 1...
 		go func() {
-			success, _ := suite1.Run("proc 1", Label("TopLevelLabel"), "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, conf)
+			success, _ := suite1.Run("proc 1", Label("TopLevelLabel"), SemVerConstraints{}, ComponentSemVerConstraints{}, nil, "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, noopProgressSignalRegistrar, conf)
 			finished <- success
 			close(exit1)
 		}()
 
 		//and launch suite 2...
-		reporter2 = &FakeReporter{}
+		reporter2 = NewFakeReporter()
 		exit2 := exitChannels[2] //avoid a race around exitChannels access in a separate goroutine
 		go func() {
-			success, _ := suite2.Run("proc 2", Label("TopLevelLabel"), "/path/to/suite", internal.NewFailer(), reporter2, writer, outputInterceptor, interruptHandler, client, conf2)
+			success, _ := suite2.Run("proc 2", Label("TopLevelLabel"), SemVerConstraints{}, ComponentSemVerConstraints{}, nil, "/path/to/suite", internal.NewFailer(), reporter2, writer, outputInterceptor, interruptHandler, client, noopProgressSignalRegistrar, conf2)
 			finished <- success
 			close(exit2)
 		}()
@@ -150,13 +158,24 @@ var _ = Describe("Running tests in parallel", func() {
 		allRuns := append(rt.TrackedRuns(), rt2.TrackedRuns()...)
 		Ω(allRuns).Should(ConsistOf(
 			"before-suite-1", "before-suite-2 floop", "after-suite-1", "after-suite-2", "before-suite-2 floop", "after-suite-1",
-			"A", "B", "C", "D", "E", "F", "G", "H", "I", "OA", "OB", "OC", "OSA", "OSB", //all ran
+			"A", "B", "C", "D", "E", "F", "G", "H", "I",
+			"OBA", "OA", "OB", "OC", "OC", "OC", "OAA",
+			"OSBA", "OSA", "OSB", "OSB", "OSB", "OSAA", //all ran
 		))
 
 		Ω(reporter.Did.Names()).ShouldNot(BeEmpty())
 		Ω(reporter2.Did.Names()).ShouldNot(BeEmpty())
 		names := append(reporter.Did.Names(), reporter2.Did.Names()...)
 		Ω(names).Should(ConsistOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "OA", "OB", "OC", "OSA", "OSB"))
+
+		for _, report := range reporter.Did {
+			Ω(report.ParallelProcess).Should(Equal(1))
+			Ω(report.RunningInParallel).Should(BeTrue())
+		}
+		for _, report := range reporter2.Did {
+			Ω(report.ParallelProcess).Should(Equal(2))
+			Ω(report.RunningInParallel).Should(BeTrue())
+		}
 	})
 
 	It("only runs serial tests on proc 1, after the other proc has finished", func() {
@@ -189,6 +208,24 @@ var _ = Describe("Running tests in parallel", func() {
 			}
 		}
 		Ω(found).Should(BeTrue())
+
+		repeatedReport := reporter.Did.Find("OC")
+		if repeatedReport.LeafNodeText == "" {
+			repeatedReport = reporter2.Did.Find("OC")
+		}
+		Ω(repeatedReport).Should(And(
+			HavePassed(NumAttempts(3)),
+			HaveRepeatAttempts(1, 2),
+			HaveField("RunningInParallel", BeTrue()),
+			HaveField("IsSerial", BeFalse()),
+		))
+
+		Ω(reporter.Did.Find("OSB")).Should(And(
+			HavePassed(NumAttempts(3)),
+			HaveRepeatAttempts(1, 2),
+			HaveField("RunningInParallel", BeTrue()),
+			HaveField("IsSerial", BeTrue()),
+		))
 	})
 
 	It("reports the correct statistics", func() {

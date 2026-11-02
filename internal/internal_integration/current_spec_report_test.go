@@ -50,13 +50,13 @@ var _ = Describe("CurrentSpecReport", func() {
 			})
 
 			Context("an serial spec", func() {
-				It("D", Serial, logCurrentSpecReport("D"))
+				It("D", Serial, logCurrentSpecReport("D"), SpecPriority(10))
 			})
 			AfterSuite(logCurrentSpecReport("after-suite"))
 		})
 	})
 
-	It("returns an a valid GinkgoTestDescription in the before suite and after suite", func() {
+	It("returns an a valid CurrentSpecReport in the before suite and after suite", func() {
 		Ω(specs["before-suite"].LeafNodeType).Should(Equal(types.NodeTypeBeforeSuite))
 		Ω(specs["after-suite"].LeafNodeType).Should(Equal(types.NodeTypeAfterSuite))
 	})
@@ -97,6 +97,7 @@ var _ = Describe("CurrentSpecReport", func() {
 		Ω(specs["C"].IsInOrderedContainer).Should(BeTrue())
 		Ω(specs["D"].IsSerial).Should(BeTrue())
 		Ω(specs["D"].IsInOrderedContainer).Should(BeFalse())
+		Ω(specs["D"].SpecPriority).Should(Equal(10))
 	})
 
 	It("captures test details correctly", func() {

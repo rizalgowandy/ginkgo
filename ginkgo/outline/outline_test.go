@@ -1,6 +1,7 @@
 package outline
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"go/parser"
@@ -41,6 +42,8 @@ var _ = DescribeTable("Validate outline from file with",
 		Expect(err).To(BeNil(), "error reading CSV outline fixture: %s", err)
 
 		Expect(gotCSV).To(Equal(string(wantCSV)))
+
+		ensureRecordsAreIdentical(csvOutlineFilename, jsonOutlineFilename)
 	},
 	// To add a test:
 	// 1. Create the input, e.g., `myspecialcase_test.go`
@@ -59,6 +62,11 @@ var _ = DescribeTable("Validate outline from file with",
 	Entry("mixed focused containers and specs", "mixed_test.go", "mixed_test.go.json", "mixed_test.go.csv"),
 	Entry("specs used to verify position", "position_test.go", "position_test.go.json", "position_test.go.csv"),
 	Entry("suite setup", "suite_test.go", "suite_test.go.json", "suite_test.go.csv"),
+	Entry("core dsl import", "dsl_core_test.go", "dsl_core_test.go.json", "dsl_core_test.go.csv"),
+	Entry("labels decorator on containers and specs", "labels_test.go", "labels_test.go.json", "labels_test.go.csv"),
+	Entry("pending decorator on containers and specs", "pending_decorator_test.go", "pending_decorator_test.go.json", "pending_decorator_test.go.csv"),
+	Entry("proper csv escaping of all fields", "csv_proper_escaping_test.go", "csv_proper_escaping_test.go.json", "csv_proper_escaping_test.go.csv"),
+	Entry("DescribeTableSubtree containers and specs", "describe_table_subtree_test.go", "describe_table_subtree_test.go.json", "describe_table_subtree_test.go.csv"),
 )
 
 var _ = Describe("Validate position", func() {
@@ -90,3 +98,111 @@ var _ = Describe("Validate position", func() {
 
 	})
 })
+
+func ensureRecordsAreIdentical(csvOutlineFilename, jsonOutlineFilename string) {
+	csvFile, err := os.Open(filepath.Join("_testdata", csvOutlineFilename))
+	Expect(err).To(BeNil(), "error opening CSV outline fixture: %s", err)
+	defer csvFile.Close()
+
+	csvReader := csv.NewReader(csvFile)
+	csvRows, err := csvReader.ReadAll()
+	Expect(err).To(BeNil(), "error reading CSV outline fixture: %s", err)
+
+	// marshal csvRows into some comparable shape
+	csvFields := csvRows[0]
+	var csvRecords []ginkgoMetadata
+	for i := 1; i < len(csvRows); i++ {
+		var record ginkgoMetadata
+
+		for j, field := range csvFields {
+
+			field = strings.ToLower(field)
+			value := csvRows[i][j]
+
+			switch field {
+			case "name":
+				record.Name = value
+			case "text":
+				record.Text = value
+			case "start":
+				start, err := strconv.Atoi(value)
+				Expect(err).To(BeNil(), "error converting start to int: %s", err)
+				record.Start = start
+			case "end":
+				end, err := strconv.Atoi(value)
+				Expect(err).To(BeNil(), "error converting end to int: %s", err)
+				record.End = end
+			case "spec":
+				spec, err := strconv.ParseBool(value)
+				Expect(err).To(BeNil(), "error converting spec to bool: %s", err)
+				record.Spec = spec
+			case "focused":
+				focused, err := strconv.ParseBool(value)
+				Expect(err).To(BeNil(), "error converting focused to bool: %s", err)
+				record.Focused = focused
+			case "pending":
+				pending, err := strconv.ParseBool(value)
+				Expect(err).To(BeNil(), "error converting pending to bool: %s", err)
+				record.Pending = pending
+			case "labels":
+				// strings.Split will return [""] for an empty string, we want []
+				if value == "" {
+					record.Labels = []string{}
+				} else {
+					record.Labels = strings.Split(value, ", ")
+				}
+			default:
+				Fail(fmt.Sprintf("unexpected field: %s", field))
+			}
+		}
+
+		// "By" is a special case; nil out its labels so we can compare to the parsed JSON
+		if record.Name == "By" {
+			record.Labels = nil
+		}
+
+		csvRecords = append(csvRecords, record)
+	}
+
+	jsonFile, err := os.Open(filepath.Join("_testdata", jsonOutlineFilename))
+	Expect(err).To(BeNil(), "error opening JSON outline fixture: %s", err)
+	defer jsonFile.Close()
+
+	jsonDecoder := json.NewDecoder(jsonFile)
+	var jsonRows []ginkgoNode
+	err = jsonDecoder.Decode(&jsonRows)
+	Expect(err).To(BeNil(), "error reading JSON outline fixture: %s", err)
+
+	// marshal jsonRows into some comparable shape - the hierarchical structure needs to be flattened
+	var jsonRecords []ginkgoMetadata
+	flattenNodes(jsonRows, &jsonRecords)
+
+	Expect(csvRecords).To(Equal(jsonRecords))
+}
+
+// flattenNodes converts the hierarchical json output into a list of records
+func flattenNodes(nodes []ginkgoNode, flatNodes *[]ginkgoMetadata) {
+	for _, node := range nodes {
+		record := ginkgoMetadata{
+			Name:    node.Name,
+			Text:    node.Text,
+			Start:   node.Start,
+			End:     node.End,
+			Spec:    node.Spec,
+			Focused: node.Focused,
+			Pending: node.Pending,
+			Labels:  node.Labels,
+		}
+
+		*flatNodes = append(*flatNodes, record)
+
+		// handle nested nodes
+		if len(node.Nodes) > 0 {
+			var nestedNodes []ginkgoNode
+			for _, nestedNode := range node.Nodes {
+				nestedNodes = append(nestedNodes, *nestedNode)
+			}
+			flattenNodes(nestedNodes, flatNodes)
+		}
+	}
+}

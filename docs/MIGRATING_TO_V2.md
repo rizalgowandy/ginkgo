@@ -23,7 +23,7 @@ To upgrade to Ginkgo 2.0, assuming you are using `go mod`, you'll need to do the
 
 2. Install the V2 CLI.  Running this may require you to run a few additional `go get`s - just follow the go toolchain's instructions until you successfully get ginkgo v2 compiled:
 	```bash
-	go install github.com/onsi/ginkgo/v2/ginkgo
+	go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@latest
 	ginkgo version //should print out "Ginkgo Version 2.0.0"
 	```
 
@@ -33,19 +33,21 @@ Updating to V2 will require you to make some changes to your test suites however
 
 With the release of Ginkgo 2.0 the 1.x version is formally deprecated and no longer supported.  All future development will occur on version 2.
 
+The next sections describe the [new features in Ginkgo 2.0](#major-additions-and-improvements) and the [major changes](#major-changes) along with details on how to migrate your test code to adapt to the changes.  At the end of this doc is an [FAQ](#faq) with common gotchas that will be tracked as they emerge.
+
 ## Major Additions and Improvements
 
 ### Interrupt Behavior
 Interrupt behavior is substantially improved, sending an interrupt signal will now:
-	- immediately cause the current test to unwind.  Ginkgo will run any `AfterEach` blocks, then immediately skip all remaining tests, then run the `AfterSuite` block.  
-	- emit information about which node Ginkgo was running when the interrupt signal was recevied.
-	- emit as much information as possible about the interrupted test (e.g. `GinkgoWriter` contents, `stdout` and `stderr` context).
-	- emit a stack trace of every running goroutine at the moment of interruption.
+- immediately cause the current test to unwind.  Ginkgo will run any `AfterEach` blocks, then immediately skip all remaining tests, then run the `AfterSuite` block.  
+- emit information about which node Ginkgo was running when the interrupt signal was received.
+- emit as much information as possible about the interrupted test (e.g. `GinkgoWriter` contents, `stdout` and `stderr` context).
+- emit a stack trace of every running goroutine at the moment of interruption.
 
 Previously, sending a second interrupt signal would cause Ginkgo to exit immediately.  With the improved interrupt behavior this is no longer necessary and Ginkgo will not exit until the test suite has unwound and completed.
 
 ### Timeout Behavior
-In Ginkgo V1.x, Ginkgo's timeout was managed by `go test`.  This meant that timeouts exited the test suite abruptly with no opportunity for custom reporters or clean up code (e.g. `AfterEach`, `AfterSuite`) to run.  This is fixed in V2.  Ginkgo now manages its own timeout and when a timeout triggers the test winds down gracefully.  In fact, a timeout is now functionally equivalen to a user-initiated interrupt.
+In Ginkgo V1.x, Ginkgo's timeout was managed by `go test`.  This meant that timeouts exited the test suite abruptly with no opportunity for custom reporters or clean up code (e.g. `AfterEach`, `AfterSuite`) to run.  This is fixed in V2.  Ginkgo now manages its own timeout and when a timeout triggers the test winds down gracefully.  In fact, a timeout is now functionally equivalent to a user-initiated interrupt.
 
 In addition, in V1.x when running multiple test suites Ginkgo would give each suite the full timeout allotment (so `ginkgo -r -timeout=1h` would give _each_ test suite one hour to complete).  In V2 the timeout now applies to the entire test suite run so that `ginkgo -r -timeout=1h` is now guaranteed to exit after (about) one hour.
 
@@ -57,9 +59,9 @@ Specs can now be decorated with a series of new spec decorators.  These decorato
 To support decorators, the signature for Ginkgo's container, setup, and It nodes have been changed to:
 
 ```go
-func Describe(text string, args ...interface{})
-func It(text string, args ...interface{})
-func BeforeEach(args ...interface{})
+func Describe(text string, args ...any)
+func It(text string, args ...any)
+func BeforeEach(args ...any)
 ```
 Note that this change is backwards compatible with v1.X.
 
@@ -232,8 +234,8 @@ Ginkgo's CLI flags have been rewritten to provide clearer, better-organized docu
 The `GinkgoWriter` is used to write output that is only made visible if a test fails, or if the user runs in verbose mode with `ginkgo -v`.
 
 In Ginkgo 2.0 `GinkgoWriter` now has:
-	- Three new convenience methods `GinkgoWriter.Print(a ...interface{})`, `GinkgoWriter.Println(a ...interface{})`, `GinkgoWriter.Printf(format string, a ...interface{})`  These are equivalent to calling the associated `fmt.Fprint*` functions and passing in `GinkgoWriter`.
-	- The ability to tee to additional writers.  `GinkgoWriter.TeeTo(writer)` will send any future data written to `GinkgoWriter` to the passed in `writer`.  You can attach multiple `io.Writer`s for `GinkgoWriter` to tee to.  You can remove all attached writers with `GinkgoWriter.ClearTeeWriters()`.
+- Three new convenience methods `GinkgoWriter.Print(a ...any)`, `GinkgoWriter.Println(a ...any)`, `GinkgoWriter.Printf(format string, a ...any)`  These are equivalent to calling the associated `fmt.Fprint*` functions and passing in `GinkgoWriter`.
+- The ability to tee to additional writers.  `GinkgoWriter.TeeTo(writer)` will send any future data written to `GinkgoWriter` to the passed in `writer`.  You can attach multiple `io.Writer`s for `GinkgoWriter` to tee to.  You can remove all attached writers with `GinkgoWriter.ClearTeeWriters()`.
 
 	Note that _all_ data written to `GinkgoWriter` is immediately forwarded to attached tee writers regardless of where a test passes or fails.
 
@@ -243,7 +245,7 @@ Ginkgo V2 provides an improved reporting infrastructure that [replaces and impro
 #### Generating machine-readable reports
 Ginkgo now natively supports generating and aggregating reports in a number of machine-readable formats - and these reports can be generated and managed by simply passing `ginkgo` command line flags.
 
-Ginkgo V2 introduces a new JSON format that faithfully captures all avialable information about a Ginkgo test suite.  JSON reports can be generated via `ginkgo --json-report=out.json`.  The resulting JSON file encodes an array of `types.Report`.  Each entry in that array lists detailed information about the test suite and includes a list of `types.SpecReport` that captures detailed information about each spec.  These types are documented [here](https://github.com/onsi/ginkgo/blob/ver2/types/types.go).
+Ginkgo V2 introduces a new JSON format that faithfully captures all available information about a Ginkgo test suite.  JSON reports can be generated via `ginkgo --json-report=out.json`.  The resulting JSON file encodes an array of `types.Report`.  Each entry in that array lists detailed information about the test suite and includes a list of `types.SpecReport` that captures detailed information about each spec.  These types are documented [here](https://github.com/onsi/ginkgo/blob/ver2/types/types.go).
 
 Ginkgo also supports generating JUnit reports with `ginkgo --junit-report=out.xml` and Teamcity reports with `ginkgo --teamcity-report=out.teamcity`.  In addition, Ginkgo V2's JUnit reporter has been improved and is now more conformant with the JUnit specification.
 
@@ -256,7 +258,7 @@ Ginkgo follows the following rules when generating reports using these new `--FO
 Ginkgo now provides a new node, `ReportAfterSuite`, with the following properties and constraints:
 - `ReportAfterSuite` nodes are passed a function that takes a `types.Report`:
   ```go
-  var _ = ReportAfterSuite(func(report types.Report) {
+  var _ = ReportAfterSuite("custom reporter", func(report types.Report) {
   	// do stuff with report
   })
   ```
@@ -291,14 +293,14 @@ Ginkgo V2 supports attaching arbitrary data to individual spec reports.  These a
 You attach data to a spec report via
 
 ```go
-AddReportEntry(name string, args ...interface{})
+AddReportEntry(name string, args ...any)
 ```
 
 `AddReportEntry` can be called from any runnable node (e.g. `It`, `BeforeEach`, `BeforeSuite`) - but not from the body of a container node (e.g. `Describe`, `Context`).
 
 `AddReportEntry` generates `ReportEntry` and attaches it to the current running spec.  `ReportEntry` includes the passed in `name` as well as the time and source location at which `AddReportEntry` was called.  Users can also attach a single object of arbitrary type to the `ReportEntry` by passing it into `AddReportEntry` - this object is wrapped and stored under `ReportEntry.Value` and is always included in the suite's JSON report.
 
-You can access the report entries attached to a spec by getting the `CurrentSpecReport()` or registering a `ReportAfterEach()` - the returned report will include the attached `ReportEntries`.  You can fetch the value associated with the `ReportEntry` by calling `entry.GetRawValue()`.  When called in-process this returns the object that was passed to `AddReportEntry`.  When called after hydrating a report from JSON `entry.GetRawValue()` will include a parsed JSON `interface{}` - if you want to hydrate the JSON yourself into an object of known type you can `json.Unmarshal([]byte(entry.Value.AsJSON), &object)`.
+You can access the report entries attached to a spec by getting the `CurrentSpecReport()` or registering a `ReportAfterEach()` - the returned report will include the attached `ReportEntries`.  You can fetch the value associated with the `ReportEntry` by calling `entry.GetRawValue()`.  When called in-process this returns the object that was passed to `AddReportEntry`.  When called after hydrating a report from JSON `entry.GetRawValue()` will include a parsed JSON `any` - if you want to hydrate the JSON yourself into an object of known type you can `json.Unmarshal([]byte(entry.Value.AsJSON), &object)`.
 
 #### Supported Args
 `AddReportEntry` supports the `Offset` and `CodeLocation` decorators.  These will control the source code location associated with the generated `ReportEntry`.  You can also pass in a `time.Time` to override the `ReportEntry`'s timestamp. It also supports passing in a `ReportEntryVisibility` enum to control the report's visibility (see below).
@@ -375,7 +377,7 @@ When generating profiles for `-cpuprofile=FILE`, `-blockprofile=FILE`, `-memprof
 Coverage reporting is much improved in 2.0:
 
 - `ginkgo -cover -p` now emits code coverage after the test completes, just like `ginkgo -cover` does in series.
-- When running across mulitple packages (e.g. `ginkgo -r -cover`) ginkgo will now emit a composite coverage statistic that represents the total coverage across all test suites run.  (Note that this is disabled if you set `-keep-separate-coverprofiles`).
+- When running across multiple packages (e.g. `ginkgo -r -cover`) ginkgo will now emit a composite coverage statistic that represents the total coverage across all test suites run.  (Note that this is disabled if you set `-keep-separate-coverprofiles`).
 
 In addition, Ginkgo now follows the following rules when generating cover profiles using `-cover` and/or `-coverprofile=FILE`:
 
@@ -389,7 +391,7 @@ Ginkgo can now repeat a test suite N additional times by running `ginkgo --repea
 Ginkgo requires the tests to succeed during each repetition in order to consider the test run a success.
 
 ### New: --focus-file and --skip-file
-You can now tell Ginkgo to only run specs that match (or don't match) a given file filter.  You can filter by filename as well as file:line.  See the [Filtering Specs](onsi.github.io/ginkgo/#filtering-specs) documentation for more details.
+You can now tell Ginkgo to only run specs that match (or don't match) a given file filter.  You can filter by filename as well as file:line.  See the [Filtering Specs](https://onsi.github.io/ginkgo/#filtering-specs) documentation for more details.
 
 ### Improved: windows support for capturing stdout and stderr
 In V1 Ginkgo would run windows tests in parallel with the `--stream` option.  This would result in hard-to-understand interleaved output.  The reason behind this design choice was that it proved challenging to intercept all stdout and stderr output on Windows.  V2 implements a best-effort output interception scheme for windows that entails reassigning the global `os.Stdout` and `os.Stderr` variables.  While not as bullet-proof as the Unix `syscall.Dup2` based implementation, this is likely good enough for most usecases and allows Ginkgo support on Windows to come into parity with unix.
@@ -403,12 +405,12 @@ In V1 Ginkgo would run windows tests in parallel with the `--stream` option.  Th
 - Tables can now accept slices of []TableEntry in addition to individual entries.  This allows for entries to be reused across different tables.
 - Error output is clearer and consistently links to relevant sections in the documentation.
 - `By` now emits a timestamp.  It also registers a `ReportEntry` that appears in the suite report as structured data.  If passed a callback, `By` will now time the callback and include the duration in the suite report.
-- Test randomization is now more stable as tests are now sorted deterministcally on file_name:line_number first (previously they were sorted on test text which could not guarantee a stable sort).
+- Test randomization is now more stable as tests are now sorted deterministically on file_name:line_number first (previously they were sorted on test text which could not guarantee a stable sort).
 - A new "very verbose" setting is now available.  Setting `-vv` implies `-v` but also causes skipped tests to be emitted.
 - Ginkgo's OutputInterceptor (the component that intercepts stdout/stderr when running in parallel) should now be more performant and better handle edge cases.  It can be paused and resumed with PauseOutputInterception() and ResumeOutputInterception() and disabled entirely with --output-interceptor-mode=none.
 
 ## Major Changes
-These are major changes that will need user intervention to migrate succesfully.
+These are major changes that will need user intervention to migrate successfully.
 
 ### Removed: Async Testing
 As described in the [Ginkgo 2.0 Proposal](https://docs.google.com/document/d/1h28ZknXRsTLPNNiOjdHIO-F2toCzq4xoZDXbfYaBdoQ/edit#heading=h.mzgqmkg24xoo) the Ginkgo 1.x implementation of asynchronous testing using a `Done` channel was a confusing source of test-pollution.  It is removed in Ginkgo 2.0.
@@ -425,20 +427,17 @@ It("...", func(done Done) {
 will emit a deprecation warning and will run **synchronously**.  This means the `timeout` will not be enforced and the status of the `Done` channel will be ignored - a test that hangs will hang indefinitely.
 
 #### Migration Strategy:
-We recommend users make targeted use of Gomega's [Asynchronous Assertions](https://onsi.github.io/gomega/#making-asynchronous-assertions) to better test asynchronous behavior.
+We recommend users make targeted use of Gomega's [Asynchronous Assertions](https://onsi.github.io/gomega/#making-asynchronous-assertions) to better test asynchronous behavior.  In addition, as of Ginkgo 2.3.0, users can [make individual nodes interruptible and reintroduce the notion of spec timeouts](https://onsi.github.io/ginkgo/#spec-timeouts-and-interruptible-nodes).
 
 As a first migration pass that produces **equivalent behavior** users can replace asynchronous tests with:
 
 ```go
-It("...", func() {
-	done := make(chan interface{})
-	go func() {
-		// user test code to run asynchronously
-		close(done) //signifies the code is done
-	}()
-	Eventually(done, timeout).Should(BeClosed())
-})
+It("...", func(ctx SpecContext) {
+	// user test code to run asynchronously
+}, NodeTimeout(timeout))
 ```
+
+if your code supports it, you can use the `ctx` passed in to the `It` to signal that the spec deadline has elapsed and cause the spec to exit.
 
 ### Removed: Measure
 As described in the [Ginkgo 2.0 Proposal](https://docs.google.com/document/d/1h28ZknXRsTLPNNiOjdHIO-F2toCzq4xoZDXbfYaBdoQ/edit#heading=h.2ezhpn4gmcgs) the Ginkgo 1.x implementation of benchmarking using `Measure` nodes was a source of tightly-coupled complexity.  It is removed in Ginkgo 2.0.
@@ -472,7 +471,7 @@ Alternatively, you can use the new `--json-report` flag to produce a machine rea
 Finally, if you still need the real-time reporting capabilities that 1.X's custom reporters provided you can use [`ReportBeforeEach` and `ReportAfterEach`](#capturing-report-information-about-each-spec-as-the-test-suite-runs) to get information about each spec as it completes.
 
 ### Changed: First-class Support for Table Testing
-The table extension has been moved into the core Ginkgo DSL and the table functionality has been improved while maintaining backward compatibility.  Users no longer need to `import "github.com/onsi/ginkgo/v2/extenstions/table"`.  Instead the table DSL is automatically pulled in by importing `"github.com/onsi/ginkgo/v2"`.
+The table extension has been moved into the core Ginkgo DSL and the table functionality has been improved while maintaining backward compatibility.  Users no longer need to `import "github.com/onsi/ginkgo/v2/extensions/table"`.  Instead the table DSL is automatically pulled in by importing `"github.com/onsi/ginkgo/v2"`.
 
 #### Migration Strategy:
 Remove `"github.com/onsi/ginkgo/v2/extensions/table` imports.  Code that was dot-importing both Ginkgo and the table extension should automatically work.  If you were not dot-importing you will need to replace references to `table.DescribeTable` and `table.Entry` with `ginkgo.DescribeTable` and `ginkgo.Entry`.
@@ -494,11 +493,11 @@ V1 also allowed mutating the global config objects which could lead to strange b
 #### Migration Strategy:
 Instead, configuration can be accessed using the DSL's `GinkgoConfiguration()` function.  This will return a `types.SuiteConfig` and `types.ReporterConfig`.  Users generally don't need to access this configuration - the most commonly used fields by end users are already made available via `GinkgoRandomSeed()` and `GinkgoParallelProcess()`.
 
-It is generally recommended that users use the CLI to configure Ginkgo as some aspects of configuration must apply to the CLI as well as the suite under tests - nonetheless there are contexts where it is necessary to change Ginkgo's configuration programatically.  V2 supports this by allowing users to pass updated configuration into `RunSpecs`:
+It is generally recommended that users use the CLI to configure Ginkgo as some aspects of configuration must apply to the CLI as well as the suite under tests - nonetheless there are contexts where it is necessary to change Ginkgo's configuration programmatically.  V2 supports this by allowing users to pass updated configuration into `RunSpecs`:
 
 ```go
 func TestMySuite(t *testing.T)  {
-	RegisterFailHanlder(gomega.Fail)
+	RegisterFailHandler(gomega.Fail)
 	// fetch the current config
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	// adjust it
@@ -546,7 +545,7 @@ The `-debug` flag has been removed.  It functioned primarily as a band-aid to Gi
 Users should remove -stream from any scripts they have that invoke the `ginkgo` cli.
 
 ### Removed: ginkgo nodot
-The `ginkgo nodot` subcommand in V1, along with the `--nodot` flags for `ginkgo bootstrap` and `ginkgo generate` were provided to allow users to avoid a `.` import of Ginkgo and Gomega but still have access to the exported variables and types at the top-level.  This was implemented by defining top-level aliases that pointed to the objects and types in the imported Ginkgo and Gomega libraries in the user's bootstrap file.  In practice most users either dot-import Ginkgo and Gomega, or they don't and use the imported package name to refer to objects and types instead.  V2 removes the support generating and maintaining these alias lists.  `--nodot` remainds for `ginkgo bootstrap` and `ginkgo generate` and it simply avoids dot-importing Ginkgo and Gomega.
+The `ginkgo nodot` subcommand in V1, along with the `--nodot` flags for `ginkgo bootstrap` and `ginkgo generate` were provided to allow users to avoid a `.` import of Ginkgo and Gomega but still have access to the exported variables and types at the top-level.  This was implemented by defining top-level aliases that pointed to the objects and types in the imported Ginkgo and Gomega libraries in the user's bootstrap file.  In practice most users either dot-import Ginkgo and Gomega, or they don't and use the imported package name to refer to objects and types instead.  V2 removes the support generating and maintaining these alias lists.  `--nodot` remains for `ginkgo bootstrap` and `ginkgo generate` and it simply avoids dot-importing Ginkgo and Gomega.
 
 As a result of this change custom bootstrap and generate templates may need to be updated:
 
@@ -577,35 +576,111 @@ These are minor changes that will be transparent for most users.
 
 - `"top level"` is no longer the first element in `types.SpecReport.NodeTexts`.  This will only affect users who write custom reporters.
 
-- The output format of Ginkgo's Default Reporter has changed in numerous subtle ways to improve readability and the user experience.  Users who were scraping Ginkgo output programatically may need to change their scripts or use the new JSON formatted report option.
+- The output format of Ginkgo's Default Reporter has changed in numerous subtle ways to improve readability and the user experience.  Users who were scraping Ginkgo output programmatically may need to change their scripts or use the new JSON formatted report option.
 
 - When running in series and verbose mode (i.e. `ginkgo -v`) GinkgoWriter output is emitted in real-time (existing behavior) but also emitted in the failure message for failed tests.  This allows for consistent failure messages regardless of verbosity settings and also makes it possible for the resulting JSON report to include captured GinkgoWriter information.
 
 - Removed `ginkgo blur` alias.  Use `ginkgo unfocus` instead.
 
----
+## FAQ
 
-# Using the Beta
+As users have started adopting Ginkgo v2 they've bumped into a few specific issues.  This FAQ will grow as these issues are identified to help address them.
 
-A release candidate for Ginkgo 2.0 is now available.  The GA release should come out in the Fall of 2021 but we'd love to get feedback and usage of the RC underway.
+### Can I mix Ginkgo V1 and Ginkgo V2?
 
-Currently, 2.0 lives on a branch called `ver2` and major version number of Ginkgo has been bumped to v2.  If you are using `go mod` you'll need to do the following to use Ginkgo 2.0 in an existing or new project:
+..._ish_.
 
-1. Get the `2.0.0-rc3` tag of `ginkgo/v2`:
-	```bash
-	go get github.com/onsi/ginkgo/v2@v2.0.0-rc3
-	```
+**What you _can't_ do**
 
-2. Install the V2 CLI.  Running this may require you to run a few addition `go get`s - just follow the go toolchain's instructions until you successfully get ginkgo v2 compiled:
-	```bash
-	go install github.com/onsi/ginkgo/v2/ginkgo
-	ginkgo version //should print out "Ginkgo Version 2.0.0-rc3"
-	```
+Under the hood Ginkgo V2 is effectively a rewrite of Ginkgo V1.  While the external interfaces are largely compatible (modulo the differences pointed out in this doc) the internals are very different.  Because of this **it is not possible** to import and use V1 _and_ V2 **in the same _package_**.
 
-3. Update all your import statements from `import github.com/onsi/ginkgo` to `import github.com/onsi/ginkgo/v2`.  You can use your text editor to replace all instances of `"github.com/onsi/ginkgo` with `"github.com/onsi/ginkgo/v2`
+In fact, trying to do so will result in a crash as Ginkgo V1's `init` function and Ginkgo V2's `init` function will register conflicting command line flags.
 
-And that's it!
+That means you can't do something like:
 
-Please share any feedback about the RC on the [Ginkgo 2.0](https://github.com/onsi/ginkgo/issues/711) issue.  Updated V2 documentation is being maintained [here](https://onsi.github.io/ginkgo/) though this migration guide has all the details around new features and backward incompatible changes.  Updating to V2 will require you to make some changes to your test suites however the intent is that this work should be relatively minimal for most users.
+```go
+/* sprockets/widget_test.go */
+
+import (
+	. "github.com/onsi/ginkgo" //v1
+)
+
+var _ = It("uses V1", func() {...})
+
+/* sprockets/doodad_test.go */
+
+import (
+	. "github.com/onsi/ginkgo/v2" //v2
+)
+
+var _ = It("uses V2", func() {...})
+```
+
+It _also_ means you can't use a _dependency_ in your test that, in turn, imports a mismatched version of Ginkgo.  For example, let's say we have a test helper package:
+
+```go
+/* helpers/test_helper.go */
+
+import (
+	"github.com/onsi/ginkgo" //imports v1
+)
+
+func EnsureNoSprocketRust(sprocket *Sprocket) {
+	if sprocket.IsRusty() {
+		Fail("Sprocket rust detected")
+	}
+}
+```
+
+this test helper package imports Ginkgo V1.  If we try to use it in a test package that uses Ginkgo V2:
+
+
+```go
+/* sprockets/widget_test.go */
+
+import (
+	. "github.com/onsi/ginkgo/v2" //v2
+	"helpers" //imports v1 => boom
+)
+
+var _ = It("has no rusty sprockets", func() {
+	helpers.EnsureNoSprocketRust(sprocket)
+})
+```
+
+this won't work as the two versions of Ginkgo will be imported and result in a conflict.
+
+Lastly, you can run into this issue accidentally while upgrading to 2.0 if you update some, but not all, of the import statements in your package.
+
+**What you _can_ do**
+
+While you cannot import V1 and V2 in the same package you _can_ have some packages that use V1 and other packages that use V2 associated with a given module.  The different test packages are compiled separately and the V1 packages will use Ginkgo V1 whereas the V2 packages will use Ginkgo V2.  Go basically treats different major versions of a dependency as completely different packages.
+
+This means that your dependencies can use a different major version of Ginkgo for _their_ test suites than your codebase (as long as you aren't importing a test-helper dependency into your test suite and running into the major version clash described above).
+
+This _also_ means that you can, in principle, upgrade different test suites in your module at different times.  For example, in a fictitious `factory` module the `sprockets` package can be upgraded to Ginkgo V2 first, and the `convery_belt` package can stay at Ginkgo V1 until later.  In _practice_ however, you'll run into difficulties as the `ginkgo` cli used to invoke the tests will be at a different major version than some subset of packages under test - this basically won't work because of changes in the client/server contract between the CLI and the test library across the two major versions.  So you'll need to take care to use the correct version of the cli with the correct test package.  In general the migration to V2 is intended to be simple enough that you should rarely need to resort to having mixed-version numbers like this.
+
+### A symbol in V2 now clashes with a symbol in my codebase.  What do I do?
+If Ginkgo 2.0 introduces a new exported symbol that now clashes with your codebase (because you are dot-importing Ginkgo). Check out the [Alternatives to Dot-Importing Ginkgo](https://onsi.github.io/ginkgo/#alternatives-to-dot-importing-ginkgo) section of the documentation for some options.  You may be able to, instead, dot-import just a subset of the Ginkgo DSL using the new `github.com/onsi/ginkgo/v2/dsl` set of packages.
+
+Specifically when upgrading from v1 to v2 if you see a dot-import clash due to a newly introduced symbol (e.g. the new `Label` decorator) you can instead choose to dot-import the core DSL and import the `decorator` dsl separately:
+
+```go
+import (
+	. "github.com/onsi/ginkgo/v2/dsl/core"	
+	"github.com/onsi/ginkgo/v2/dsl/decorators"	
+)
+
+var _ = It("gives you the core DSL", decorators.Label("and namespaced decorators"), func() {
+	...
+})
+
+```
+
+### I've upgraded to V2 and now have race conditions in my test.  What do I do?
+
+Most likely you are launching a goroutine that outlives the spec it was launched in and calling `By` in it.  You probably didn't intend to have the goroutine outlive its spec so you'll probably want to fix that.  More details here: https://github.com/onsi/ginkgo/issues/844
+
+If that isn't the cause of your race condition you may have come across a bug,  Please [open an issue](https://github.com/onsi/ginkgo/issues/new)!
 
 {% endraw  %}

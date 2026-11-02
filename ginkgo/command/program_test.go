@@ -102,7 +102,7 @@ var _ = Describe("Program", func() {
 		})
 	})
 
-	Context("when called with an unkown subcommand", func() {
+	Context("when called with an unknown subcommand", func() {
 		BeforeEach(func() {
 			program.RunAndExit([]string{"omicron", "xi"})
 		})
@@ -117,11 +117,11 @@ var _ = Describe("Program", func() {
 
 	Context("when passed arguments and additional arguments", func() {
 		BeforeEach(func() {
-			program.RunAndExit([]string{"omicron", "gamma", "arg1", "-arg2", "--", "addArg1", "addArg2"})
+			program.RunAndExit([]string{"omicron", "gamma", "arg1", "arg2", "--", "addArg1", "addArg2"})
 		})
 		It("passes both in", func() {
 			Ω(rt).Should(HaveTracked("gamma", "exit"))
-			Ω(rt).Should(HaveRunWithData("gamma", "Args", []string{"arg1", "-arg2"}, "AdditionalArgs", []string{"addArg1", "addArg2"}))
+			Ω(rt).Should(HaveRunWithData("gamma", "Args", []string{"arg1", "arg2"}, "AdditionalArgs", []string{"addArg1", "addArg2"}))
 			Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
 			Ω(buf.Contents()).Should(BeEmpty())
 		})
@@ -283,7 +283,7 @@ var _ = Describe("Program", func() {
 		})
 	})
 
-	Context("when an unkown flag is used", func() {
+	Context("when an unknown flag is used", func() {
 		BeforeEach(func() {
 			program.RunAndExit([]string{"omicron", "beta", "-zanzibar"})
 		})
@@ -318,6 +318,102 @@ var _ = Describe("Program", func() {
 				"  Kaboom!",
 			}, "\n")))
 		})
+	})
+
+	Context("completion subcommand", func() {
+		BeforeEach(func() {
+			program.Commands = append(program.Commands, program.BuildCompletionCommand())
+		})
+
+		Context("when completing the subcommand position with no args", func() {
+			BeforeEach(func() {
+				program.RunAndExit([]string{"omicron", "completion", "--complete", "bash", "--"})
+			})
+
+			It("lists all command names", func() {
+				Ω(rt).Should(HaveTracked("exit"))
+				Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+				output := strings.Split(string(buf.Contents()), "\n")
+				Ω(output).Should(HaveExactElements(
+					HavePrefix("alpha "),
+					HavePrefix("beta "),
+					HavePrefix("completion "),
+					"gamma",
+					"zeta",
+					"",
+				))
+			})
+		})
+
+		Context("when completing the subcommand position with a partial arg", func() {
+			BeforeEach(func() {
+				program.RunAndExit([]string{"omicron", "completion", "--complete", "bash", "--", "be"})
+			})
+
+			It("lists only matching command names", func() {
+				Ω(rt).Should(HaveTracked("exit"))
+				Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+				output := string(buf.Contents())
+				Ω(output).Should(Equal("beta\n"))
+			})
+		})
+
+		DescribeTableSubtree("when completing flags for a known subcommand",
+			func(shell, result string) {
+				BeforeEach(func() {
+					program.RunAndExit([]string{"omicron", "completion", "--complete", shell, "--", "beta", "--"})
+				})
+
+				It("lists flags for that subcommand", func() {
+					Ω(rt).Should(HaveTracked("exit"))
+					Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+					Ω(string(buf.Contents())).Should(Equal(result))
+				})
+			},
+			Entry("bash", "bash", "--decay-rate\n"),
+			Entry("fish", "fish", "--decay-rate\tset the decay rate, in years\n"),
+			Entry("zsh", "zsh", "--decay-rate:set the decay rate, in years\n"),
+		)
+
+		Context("when completing flags for a known subcommand with one dash", func() {
+			BeforeEach(func() {
+				program.RunAndExit([]string{"omicron", "completion", "--complete", "bash", "--", "beta", "-"})
+			})
+
+			It("lists flags for that subcommand with one dash", func() {
+				Ω(rt).Should(HaveTracked("exit"))
+				Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+				output := string(buf.Contents())
+				Ω(output).Should(Equal("-decay-rate\n"))
+			})
+		})
+
+		Context("when completing flags for default subcommand", func() {
+			BeforeEach(func() {
+				program.RunAndExit([]string{"omicron", "completion", "--complete", "bash", "--", "--"})
+			})
+
+			It("lists flags for default subcommand", func() {
+				Ω(rt).Should(HaveTracked("exit"))
+				Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+				output := string(buf.Contents())
+				Ω(output).Should(Equal(""))
+			})
+		})
+
+		Context("when completing pass-through arguments", func() {
+			BeforeEach(func() {
+				program.RunAndExit([]string{"omicron", "completion", "--complete", "bash", "--", "run", "--", "--"})
+			})
+
+			It("outputs nothing", func() {
+				Ω(rt).Should(HaveTracked("exit"))
+				Ω(rt).Should(HaveRunWithData("exit", "Code", 0))
+				output := string(buf.Contents())
+				Ω(output).Should(Equal(""))
+			})
+		})
+
 	})
 
 })

@@ -37,6 +37,9 @@ var _ = Describe("Config", func() {
 				repConf = types.ReporterConfig{JSONReport: "foo"}
 				Ω(repConf.WillGenerateReport()).Should(BeTrue())
 
+				repConf = types.ReporterConfig{GoJSONReport: "foo"}
+				Ω(repConf.WillGenerateReport()).Should(BeTrue())
+
 				repConf = types.ReporterConfig{JUnitReport: "foo"}
 				Ω(repConf.WillGenerateReport()).Should(BeTrue())
 
@@ -108,7 +111,7 @@ var _ = Describe("Config", func() {
 		})
 
 		Context("when all is well", func() {
-			It("retuns no errors", func() {
+			It("returns no errors", func() {
 				errors := types.VetConfig(flagSet, suiteConf, repConf)
 				Ω(errors).Should(BeEmpty())
 			})

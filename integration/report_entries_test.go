@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/ginkgo/v2/internal/test_helpers"
+	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
@@ -49,7 +50,7 @@ var _ = Describe("ReportEntries", func() {
 			passes := reports.Find("passes")
 			Ω(passes.ReportEntries).Should(HaveLen(6))
 			Ω(passes.ReportEntries[0].Name).Should(Equal("passes-first-report"))
-			Ω(passes.ReportEntries[0].GetRawValue()).Should(Equal(map[string]interface{}{"Label": "pass-bob", "Count": float64(1)}))
+			Ω(passes.ReportEntries[0].GetRawValue()).Should(Equal(map[string]any{"Label": "pass-bob", "Count": float64(1)}))
 			Ω(passes.ReportEntries[0].StringRepresentation()).Should(Equal("{{red}}pass-bob {{green}}1{{/}}"))
 			Ω(passes.ReportEntries[0].Time).Should(BeTemporally("~", time.Now(), time.Minute))
 
@@ -62,7 +63,7 @@ var _ = Describe("ReportEntries", func() {
 			Ω(passes.ReportEntries[2].StringRepresentation()).Should(Equal("3"))
 
 			Ω(passes.ReportEntries[3].Name).Should(Equal("passes-pointer-report"))
-			Ω(passes.ReportEntries[3].GetRawValue()).Should(Equal(map[string]interface{}{"Label": "passed", "Count": float64(4)}))
+			Ω(passes.ReportEntries[3].GetRawValue()).Should(Equal(map[string]any{"Label": "passed", "Count": float64(4)}))
 			Ω(passes.ReportEntries[3].StringRepresentation()).Should(Equal("{{red}}passed {{green}}4{{/}}"))
 
 			Ω(passes.ReportEntries[4].Name).Should(Equal("passes-failure-report"))
@@ -75,7 +76,7 @@ var _ = Describe("ReportEntries", func() {
 
 			fails := reports.Find("fails")
 			Ω(fails.ReportEntries[0].Name).Should(Equal("fails-first-report"))
-			Ω(fails.ReportEntries[0].GetRawValue()).Should(Equal(map[string]interface{}{"Label": "fail-bob", "Count": float64(1)}))
+			Ω(fails.ReportEntries[0].GetRawValue()).Should(Equal(map[string]any{"Label": "fail-bob", "Count": float64(1)}))
 			Ω(fails.ReportEntries[0].StringRepresentation()).Should(Equal("{{red}}fail-bob {{green}}1{{/}}"))
 			Ω(fails.ReportEntries[0].Time).Should(BeTemporally("~", time.Now(), time.Minute))
 
@@ -88,7 +89,7 @@ var _ = Describe("ReportEntries", func() {
 			Ω(fails.ReportEntries[2].StringRepresentation()).Should(Equal("3"))
 
 			Ω(fails.ReportEntries[3].Name).Should(Equal("fails-pointer-report"))
-			Ω(fails.ReportEntries[3].GetRawValue()).Should(Equal(map[string]interface{}{"Label": "failed", "Count": float64(4)}))
+			Ω(fails.ReportEntries[3].GetRawValue()).Should(Equal(map[string]any{"Label": "failed", "Count": float64(4)}))
 			Ω(fails.ReportEntries[3].StringRepresentation()).Should(Equal("{{red}}failed {{green}}4{{/}}"))
 
 			Ω(fails.ReportEntries[4].Name).Should(Equal("fails-failure-report"))
@@ -100,16 +101,14 @@ var _ = Describe("ReportEntries", func() {
 			Ω(fails.ReportEntries[5].StringRepresentation()).Should(Equal("6"))
 
 			by := reports.Find("has By entries")
-			Ω(by.ReportEntries[0].Name).Should(Equal("By Step"))
-			Ω(by.ReportEntries[0].Visibility).Should(Equal(ReportEntryVisibilityNever))
-			value := by.ReportEntries[0].GetRawValue().(map[string]interface{})
-			Ω(value["Text"]).Should(Equal("registers a hidden AddReportEntry"))
-			Ω(value["Duration"]).Should(BeZero())
-			Ω(by.ReportEntries[1].Name).Should(Equal("By Step"))
-			Ω(by.ReportEntries[1].Visibility).Should(Equal(ReportEntryVisibilityNever))
-			value = by.ReportEntries[1].GetRawValue().(map[string]interface{})
-			Ω(value["Text"]).Should(Equal("includes durations"))
-			Ω(time.Duration(value["Duration"].(float64))).Should(BeNumerically("~", time.Millisecond*100, time.Millisecond*100))
+			byEvents := by.SpecEvents.WithType(types.SpecEventByStart | types.SpecEventByEnd)
+			Ω(byEvents[0].SpecEventType).Should(Equal(types.SpecEventByStart))
+			Ω(byEvents[0].Message).Should(Equal("registers a By event"))
+			Ω(byEvents[1].SpecEventType).Should(Equal(types.SpecEventByStart))
+			Ω(byEvents[1].Message).Should(Equal("includes durations"))
+			Ω(byEvents[2].SpecEventType).Should(Equal(types.SpecEventByEnd))
+			Ω(byEvents[2].Message).Should(Equal("includes durations"))
+			Ω(byEvents[2].Duration).Should(BeNumerically("~", time.Millisecond*100, time.Millisecond*100))
 		})
 
 		It("captures all report entries in the JUnit report", func() {
@@ -117,31 +116,24 @@ var _ = Describe("ReportEntries", func() {
 			var content string
 			for _, testCase := range junit.TestCases {
 				if testCase.Name == "[It] top-level container passes" {
-					content = testCase.SystemOut
+					content = testCase.SystemErr
 				}
 			}
 
 			buf := gbytes.BufferWithBytes([]byte(content))
 
-			Ω(buf).Should(gbytes.Say("Report Entries:"))
 			Ω(buf).Should(gbytes.Say("passes-first-report"))
 			Ω(buf).Should(gbytes.Say(`report_entries/report_entries_fixture_suite_test\.go:\d+`))
-			Ω(buf).Should(gbytes.Say("{{red}}pass-bob {{green}}1{{/}}"))
-			Ω(buf).Should(gbytes.Say("--"))
+			Ω(buf).Should(gbytes.Say("pass-bob 1"))
 			Ω(buf).Should(gbytes.Say("passes-second-report"))
-			Ω(buf).Should(gbytes.Say("--"))
 			Ω(buf).Should(gbytes.Say("passes-third-report"))
 			Ω(buf).Should(gbytes.Say("3"))
-			Ω(buf).Should(gbytes.Say("--"))
 			Ω(buf).Should(gbytes.Say("passes-pointer-report"))
-			Ω(buf).Should(gbytes.Say("{{red}}passed {{green}}4{{/}}"))
-			Ω(buf).Should(gbytes.Say("--"))
+			Ω(buf).Should(gbytes.Say("passed 4"))
 			Ω(buf).Should(gbytes.Say("passes-failure-report"))
 			Ω(buf).Should(gbytes.Say("5"))
-			Ω(buf).Should(gbytes.Say("--"))
 			Ω(buf).Should(gbytes.Say("passes-never-see-report"))
 			Ω(buf).Should(gbytes.Say("6"))
-			Ω(buf).ShouldNot(gbytes.Say("--"))
 		})
 	})
 
@@ -171,6 +163,47 @@ var _ = Describe("ReportEntries", func() {
 			Ω(output).Should(ContainSubstring("failed 4"))
 			Ω(output).Should(ContainSubstring("fails-failure-report"))
 			Ω(output).ShouldNot(ContainSubstring("fails-never-see-report"))
+		})
+	})
+})
+
+var _ = Describe("DeferOnFailure", func() {
+	Describe("when running in parallel and generating a JSON report", Ordered, func() {
+		var reports Reports
+		BeforeAll(func() {
+			fm.MountFixture("defer_on_failure")
+			session := startGinkgo(fm.PathTo("defer_on_failure"), "--no-color", "--procs=2", "--json-report=out.json")
+			Eventually(session).Should(gexec.Exit(1))
+			reports = Reports(fm.LoadJSONReports("defer_on_failure", "out.json")[0].SpecReports)
+		})
+
+		entryNames := func(report types.SpecReport) []string {
+			names := []string{}
+			for _, entry := range report.ReportEntries {
+				names = append(names, entry.Name)
+			}
+			return names
+		}
+
+		It("runs nothing for passing specs", func() {
+			Ω(entryNames(reports.Find("passes"))).Should(Equal([]string{"after-each"}))
+			Ω(entryNames(reports.Find("passes first"))).Should(BeEmpty())
+		})
+
+		It("runs the callbacks newest first, before teardown, including the suite-scoped callback registered on every process", func() {
+			Ω(entryNames(reports.Find("fails"))).Should(Equal([]string{"each-dump", "suite-dump", "after-each"}))
+			Ω(entryNames(reports.Find("fails second"))).Should(Equal([]string{"all-dump", "suite-dump"}))
+		})
+
+		It("round-trips the DeferOnFailure node types through the JSON report", func() {
+			nodeTypes := map[types.NodeType]bool{}
+			for _, event := range reports.Find("fails").SpecEvents {
+				if event.SpecEventType == types.SpecEventNodeStart {
+					nodeTypes[event.NodeType] = true
+				}
+			}
+			Ω(nodeTypes).Should(HaveKey(types.NodeTypeOnFailureEach))
+			Ω(nodeTypes).Should(HaveKey(types.NodeTypeOnFailureSuite))
 		})
 	})
 })

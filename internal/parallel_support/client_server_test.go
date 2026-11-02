@@ -15,6 +15,12 @@ import (
 	"github.com/onsi/ginkgo/v2/types"
 )
 
+func endReportForProc(proc int) types.Report {
+	report := types.Report{}
+	report.SuiteConfig.ParallelProcess = proc
+	return report
+}
+
 type ColorableStringerStruct struct {
 	Label string
 	Count int
@@ -43,7 +49,7 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 				GinkgoT().Setenv("GINKGO_PARALLEL_PROTOCOL", protocol)
 
 				var err error
-				reporter = &FakeReporter{}
+				reporter = NewFakeReporter()
 				server, err = parallel_support.NewServer(3, reporter)
 				Ω(err).ShouldNot(HaveOccurred())
 				server.Start()
@@ -207,11 +213,19 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 				})
 			})
 
+			Describe("progress reports", func() {
+				It("can emit progress reports", func() {
+					pr := types.ProgressReport{LeafNodeText: "hola"}
+					Ω(client.PostEmitProgressReport(pr)).Should(Succeed())
+					Ω(reporter.ProgressReports).Should(ConsistOf(pr))
+				})
+			})
+
 			Describe("Synchronization endpoints", func() {
-				var proc1Exited, proc2Exited, proc3Exited chan interface{}
+				var proc1Exited, proc2Exited, proc3Exited chan any
 				BeforeEach(func() {
-					proc1Exited, proc2Exited, proc3Exited = make(chan interface{}), make(chan interface{}), make(chan interface{})
-					aliveFunc := func(c chan interface{}) func() bool {
+					proc1Exited, proc2Exited, proc3Exited = make(chan any), make(chan any), make(chan any)
+					aliveFunc := func(c chan any) func() bool {
 						return func() bool {
 							select {
 							case <-c:
@@ -224,6 +238,51 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 					server.RegisterAlive(1, aliveFunc(proc1Exited))
 					server.RegisterAlive(2, aliveFunc(proc2Exited))
 					server.RegisterAlive(3, aliveFunc(proc3Exited))
+				})
+
+				Describe("Managing ReportBeforeSuite synchronization", func() {
+					Context("when proc 1 succeeds", func() {
+						It("passes that success along to other procs", func() {
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStatePassed)).Should(Succeed())
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStatePassed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 fails", func() {
+						It("passes that state information along to the other procs", func() {
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStateFailed)).Should(Succeed())
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStateFailed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 disappears before reporting back", func() {
+						It("returns a meaningful error", func() {
+							close(proc1Exited)
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStateFailed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 hasn't responded yet", func() {
+						It("blocks until it does", func() {
+							done := make(chan any)
+							go func() {
+								defer GinkgoRecover()
+								state, err := client.BlockUntilReportBeforeSuiteCompleted()
+								Ω(state).Should(Equal(types.SpecStatePassed))
+								Ω(err).ShouldNot(HaveOccurred())
+								close(done)
+							}()
+							Consistently(done).ShouldNot(BeClosed())
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStatePassed)).Should(Succeed())
+							Eventually(done).Should(BeClosed())
+						})
+					})
 				})
 
 				Describe("Managing SynchronizedBeforeSuite synchronization", func() {
@@ -279,7 +338,7 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 
 					Context("when proc 1 hasn't responded yet", func() {
 						It("blocks until it does", func() {
-							done := make(chan interface{})
+							done := make(chan any)
 							go func() {
 								defer GinkgoRecover()
 								state, data, err := client.BlockUntilSynchronizedBeforeSuiteData()
@@ -297,7 +356,7 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 
 				Describe("BlockUntilNonprimaryProcsHaveFinished", func() {
 					It("blocks until non-primary procs exit", func() {
-						done := make(chan interface{})
+						done := make(chan any)
 						go func() {
 							defer GinkgoRecover()
 							Ω(client.BlockUntilNonprimaryProcsHaveFinished()).Should(Succeed())
@@ -307,6 +366,20 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 						close(proc2Exited)
 						Consistently(done).ShouldNot(BeClosed())
 						close(proc3Exited)
+						Eventually(done).Should(BeClosed())
+					})
+
+					It("does not wait for procs that have reported the end of their suite to exit", func() {
+						done := make(chan any)
+						go func() {
+							defer GinkgoRecover()
+							Ω(client.BlockUntilNonprimaryProcsHaveFinished()).Should(Succeed())
+							close(done)
+						}()
+						Consistently(done).ShouldNot(BeClosed())
+						Ω(client.PostSuiteDidEnd(endReportForProc(2))).Should(Succeed())
+						Consistently(done).ShouldNot(BeClosed())
+						Ω(client.PostSuiteDidEnd(endReportForProc(3))).Should(Succeed())
 						Eventually(done).Should(BeClosed())
 					})
 				})
@@ -323,7 +396,7 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 					})
 
 					It("blocks until all non-primary procs exit, then returns the aggregated report", func() {
-						done := make(chan interface{})
+						done := make(chan any)
 						go func() {
 							defer GinkgoRecover()
 							report, err := client.BlockUntilAggregatedNonprimaryProcsReport()
@@ -342,9 +415,30 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 						Eventually(done).Should(BeClosed())
 					})
 
+					It("does not wait for procs that have reported back to exit", func() {
+						endReport2.SuiteConfig.ParallelProcess = 2
+						endReport3.SuiteConfig.ParallelProcess = 3
+
+						done := make(chan any)
+						go func() {
+							defer GinkgoRecover()
+							report, err := client.BlockUntilAggregatedNonprimaryProcsReport()
+							Ω(err).ShouldNot(HaveOccurred())
+							Ω(report.SpecReports).Should(ConsistOf(specReportA, specReportB))
+							close(done)
+						}()
+						Consistently(done).ShouldNot(BeClosed())
+
+						Ω(client.PostSuiteDidEnd(endReport2)).Should(Succeed())
+						Consistently(done).ShouldNot(BeClosed())
+
+						Ω(client.PostSuiteDidEnd(endReport3)).Should(Succeed())
+						Eventually(done).Should(BeClosed())
+					})
+
 					Context("when a non-primary proc disappears without reporting back", func() {
 						It("blocks returns an appropriate error", func() {
-							done := make(chan interface{})
+							done := make(chan any)
 							go func() {
 								defer GinkgoRecover()
 								report, err := client.BlockUntilAggregatedNonprimaryProcsReport()

@@ -1,0 +1,50 @@
+# Release Ginkgo: Actions -> Release -> Run workflow -> bump: patch | minor.
+# Runs the full test workflow, then scripts/release.sh.  See RELEASING.md.
+name: Release
+run-name: Release (${{ inputs.bump }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor]
+        required: true
+        default: patch # without a default the GitHub mobile app can dispatch an empty bump
+
+concurrency: release
+
+permissions:
+  contents: read
+
+jobs:
+  # Reject a bad bump in seconds rather than after the full test run.
+  check-inputs:
+    runs-on: ubuntu-latest
+    steps:
+    - run: '[[ "$BUMP" == patch || "$BUMP" == minor ]] || { echo "::error::bump must be patch or minor, got \"$BUMP\""; exit 1; }'
+      env:
+        BUMP: ${{ inputs.bump }}
+
+  test:
+    needs: check-inputs
+    uses: ./.github/workflows/test.yml
+
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release commit and tag, create the GitHub release
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: 'go.mod'
+    - run: scripts/release.sh "$BUMP"
+      env:
+        BUMP: ${{ inputs.bump }}
+        GH_TOKEN: ${{ github.token }}

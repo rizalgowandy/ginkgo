@@ -137,7 +137,7 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 
 		It("round-trips through JSON correctly", func() {
 			rtEntry := reportEntryJSONRoundTrip(reportEntry)
-			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]interface{}{"Label": "bob", "Count": float64(17)}))
+			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]any{"Label": "bob", "Count": float64(17)}))
 			Ω(rtEntry.StringRepresentation()).Should(Equal("{Label:bob Count:17}"))
 		})
 
@@ -165,7 +165,7 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 
 		It("round-trips through JSON correctly", func() {
 			rtEntry := reportEntryJSONRoundTrip(reportEntry)
-			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]interface{}{"Label": "bob", "Count": float64(17)}))
+			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]any{"Label": "bob", "Count": float64(17)}))
 			Ω(rtEntry.StringRepresentation()).Should(Equal("bob 17"))
 		})
 	})
@@ -186,7 +186,7 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 
 		It("round-trips through JSON correctly", func() {
 			rtEntry := reportEntryJSONRoundTrip(reportEntry)
-			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]interface{}{"Label": "bob", "Count": float64(17)}))
+			Ω(rtEntry.GetRawValue()).Should(Equal(map[string]any{"Label": "bob", "Count": float64(17)}))
 			Ω(rtEntry.StringRepresentation()).Should(Equal("{{red}}bob {{green}}17{{/}}"))
 		})
 	})
@@ -221,6 +221,7 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 			Ω(reportEntry.Visibility).Should(Equal(types.ReportEntryVisibilityFailureOrVerbose))
 		})
 	})
+
 	Context("with a time", func() {
 		It("uses the passed in time", func() {
 			t := time.Date(1984, 3, 7, 0, 0, 0, 0, time.Local)
@@ -266,7 +267,8 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 			})
 
 			ReportAfterEach(func(report SpecReport) {
-				if report.State.Is(types.SpecStatePassed) {
+				config, _ := GinkgoConfiguration()
+				if !config.DryRun && report.State.Is(types.SpecStatePassed) {
 					Ω(report.ReportEntries[0].StringRepresentation()).Should(Equal("{{red}}bob {{green}}17{{/}}"))
 				}
 			})
@@ -289,7 +291,8 @@ var _ = Describe("ReportEntry and ReportEntries", func() {
 			})
 
 			ReportAfterEach(func(report SpecReport) {
-				if report.State.Is(types.SpecStatePassed) {
+				config, _ := GinkgoConfiguration()
+				if !config.DryRun && report.State.Is(types.SpecStatePassed) {
 					Ω(report.ReportEntries[0].StringRepresentation()).Should(Equal("{{red}}alice {{green}}42{{/}}"))
 				}
 			})

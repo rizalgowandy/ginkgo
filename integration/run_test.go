@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,7 +34,7 @@ var _ = Describe("Running Specs", func() {
 
 			Ω(output).Should(ContainSubstring("Running Suite: Passing_ginkgo_tests Suite"))
 			Ω(output).Should(ContainSubstring(strings.Repeat(denoter, 4)))
-			Ω(output).Should(ContainSubstring("SUCCESS! -- 4 Passed"))
+			Ω(output).Should(ContainSubstring("SUCCESS! -- 5 Passed"))
 			Ω(output).Should(ContainSubstring("Test Suite Passed"))
 		})
 	})
@@ -50,7 +51,7 @@ var _ = Describe("Running Specs", func() {
 
 			Ω(output).Should(ContainSubstring("Running Suite: Passing_ginkgo_tests Suite"))
 			Ω(output).Should(ContainSubstring(strings.Repeat(denoter, 4)))
-			Ω(output).Should(ContainSubstring("SUCCESS! -- 4 Passed"))
+			Ω(output).Should(ContainSubstring("SUCCESS! -- 5 Passed"))
 			Ω(output).Should(ContainSubstring("Test Suite Passed"))
 		})
 	})
@@ -267,7 +268,7 @@ var _ = Describe("Running Specs", func() {
 				Eventually(session).Should(gexec.Exit(0))
 				output := string(session.Out.Contents())
 
-				Ω(output).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs - 2 procs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s`, regexp.QuoteMeta(denoter)))
+				Ω(output).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs - 2 procs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s`, regexp.QuoteMeta(denoter)))
 				Ω(output).Should(ContainSubstring("Test Suite Passed"))
 			})
 		})
@@ -285,7 +286,7 @@ var _ = Describe("Running Specs", func() {
 				if nodes > 4 {
 					nodes = nodes - 1
 				}
-				Ω(output).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs - %d procs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]?s`, nodes, regexp.QuoteMeta(denoter)))
+				Ω(output).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs - %d procs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]?s`, nodes, regexp.QuoteMeta(denoter)))
 				Ω(output).Should(ContainSubstring("Test Suite Passed"))
 			})
 		})
@@ -338,9 +339,9 @@ var _ = Describe("Running Specs", func() {
 					output := string(session.Out.Contents())
 
 					outputLines := strings.Split(output, "\n")
-					Ω(outputLines[0]).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 2/2 specs [%s]{2} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+					Ω(outputLines[0]).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 3/3 specs [%s]{3} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 					Ω(outputLines[1]).Should(ContainSubstring("Skipping ./no_tagged_tests (no test files)"))
-					Ω(outputLines[2]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+					Ω(outputLines[2]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 					Ω(output).Should(ContainSubstring("Test Suite Passed"))
 				})
 			})
@@ -351,9 +352,9 @@ var _ = Describe("Running Specs", func() {
 					output := string(session.Out.Contents())
 
 					outputLines := strings.Split(output, "\n")
-					Ω(outputLines[0]).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 2/2 specs [%s]{2} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+					Ω(outputLines[0]).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 3/3 specs [%s]{3} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 					Ω(outputLines[1]).Should(ContainSubstring("Skipping ./no_tagged_tests (no test files)"))
-					Ω(outputLines[2]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+					Ω(outputLines[2]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 					Ω(output).Should(ContainSubstring("Test Suite Passed"))
 				})
 			})
@@ -371,7 +372,7 @@ var _ = Describe("Running Specs", func() {
 
 				outputLines := strings.Split(output, "\n")
 				Ω(outputLines[0]).Should(ContainSubstring("Skipping ./no_tagged_tests (no test files)"))
-				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 				Ω(outputLines[2]).Should(MatchRegexp(`\[\d+\] Failing_ginkgo_tests Suite - 2/2 specs`))
 				Ω(output).Should(ContainSubstring(fmt.Sprintf("%s [FAILED]", denoter)))
 				Ω(output).ShouldNot(ContainSubstring("More_ginkgo_tests Suite"))
@@ -391,7 +392,7 @@ var _ = Describe("Running Specs", func() {
 
 				outputLines := strings.Split(output, "\n")
 				Ω(outputLines[0]).Should(ContainSubstring("Skipping ./no_tagged_tests (no test files)"))
-				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 				Ω(outputLines[2]).Should(ContainSubstring("Failed to compile does_not_compile:"))
 				Ω(output).ShouldNot(ContainSubstring("More_ginkgo_tests Suite"))
 				Ω(output).Should(ContainSubstring("Test Suite Failed"))
@@ -411,11 +412,11 @@ var _ = Describe("Running Specs", func() {
 
 				outputLines := strings.Split(output, "\n")
 				Ω(outputLines[0]).Should(ContainSubstring("Skipping ./no_tagged_tests (no test files)"))
-				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 4/4 specs [%s]{4} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+				Ω(outputLines[1]).Should(MatchRegexp(`\[\d+\] Passing_ginkgo_tests Suite - 5/5 specs [%s]{5} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 				Ω(outputLines[2]).Should(ContainSubstring("Failed to compile does_not_compile:"))
 				Ω(output).Should(MatchRegexp(`\[\d+\] Failing_ginkgo_tests Suite - 2/2 specs`))
 				Ω(output).Should(ContainSubstring(fmt.Sprintf("%s [FAILED]", denoter)))
-				Ω(output).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 2/2 specs [%s]{2} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
+				Ω(output).Should(MatchRegexp(`\[\d+\] More_ginkgo_tests Suite - 3/3 specs [%s]{3} SUCCESS! \d+(\.\d+)?[muµ]s PASS`, regexp.QuoteMeta(denoter)))
 				Ω(output).Should(ContainSubstring("Test Suite Failed"))
 			})
 		})
@@ -435,8 +436,60 @@ var _ = Describe("Running Specs", func() {
 			for i := 0; i < 2048; i++ {
 				expectedNames = append(expectedNames, fmt.Sprintf("%d", i))
 			}
-			Ω(report.Names()).Should(ConsistOf(expectedNames))
 
+			names := report.Names()
+			sort.Strings(names)
+			sort.Strings(expectedNames)
+			Ω(names).Should(Equal(expectedNames))
+		})
+	})
+
+	Context("when running a suite in parallel that may have specs that are not deterministically ordered", func() {
+		BeforeEach(func() {
+			fm.MountFixture("nondeterministic")
+		})
+		It("successfully generates a stable sort across all parallel processes and ensures exactly the correct specs are run", func() {
+			By("Note: the assertions live in the ReportAfterSuite of the fixture.  So we simply assert that we succeeded")
+			session := startGinkgo(fm.PathTo("nondeterministic"), "--no-color", "--procs=3")
+			Eventually(session).Should(gexec.Exit(0))
+
+			session = startGinkgo(fm.PathTo("nondeterministic"), "--no-color", "--procs=3", "--randomize-all")
+			Eventually(session).Should(gexec.Exit(0))
+		})
+	})
+
+	Describe("optimizing build times by stripping symbols", func() {
+		BeforeEach(func() {
+			fm.MountFixture("symbol")
+		})
+		Context("when no symbols are required (i.e. no profiling)", func() {
+			It("should not have symbols", func() {
+				session := startGinkgo(fm.PathTo("symbol"), "--no-color")
+				Eventually(session).Should(gexec.Exit(0))
+				Ω(session).ShouldNot(gbytes.Say("github.com/onsi/ginkgo/v2.It")) // a symbol from ginkgo
+			})
+		})
+
+		Context("when symbols are required (i.e. with profiling)", func() {
+			It("should have symbols", func() {
+				session := startGinkgo(fm.PathTo("symbol"), "--no-color", "--cpuprofile=cpu.out")
+				Eventually(session).Should(gexec.Exit(0))
+				Ω(session).Should(gbytes.Say("github.com/onsi/ginkgo/v2.It")) // a symbol from ginkgo
+			})
+		})
+	})
+
+	Context("when there is a version mismatch between the cli and the test package", func() {
+		It("emits a useful error and tries running", func() {
+			fm.MountFixture(("version_mismatch"))
+			session := startGinkgo(fm.PathTo("version_mismatch"), "--no-color")
+			Eventually(session).Should(gbytes.Say("Ginkgo detected a version mismatch between the Ginkgo CLI and the version of Ginkgo imported by your packages"))
+			Eventually(session).Should(gbytes.Say("Mismatched package versions found"))
+			Eventually(session).Should(gbytes.Say("2.2.0"))
+			Eventually(session).Should(gbytes.Say("used by version_mismatch"))
+
+			session.Kill()
+			Eventually(session).Should(gexec.Exit())
 		})
 	})
 })

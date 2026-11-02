@@ -1,6 +1,7 @@
 package internal_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -13,7 +14,9 @@ import (
 
 func TestInternal(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Internal Suite")
+	RunSpecs(t, "Internal Suite", AroundNode(func(ctx context.Context, body func(ctx context.Context)) {
+		body(context.WithValue(ctx, "suite", "internal"))
+	}))
 }
 
 type Node = internal.Node
@@ -35,9 +38,9 @@ type NestingLevel int
 
 // convenience helper to quickly make nodes
 // assumes they are correctly configured and no errors occur
-func N(args ...interface{}) Node {
+func N(args ...any) Node {
 	nodeType, text, nestingLevel, hasBody := types.NodeTypeIt, "", -1, false
-	remainingArgs := []interface{}{cl}
+	remainingArgs := []any{cl}
 	for _, arg := range args {
 		switch t := reflect.TypeOf(arg); {
 		case t == reflect.TypeOf(NestingLevel(1)):
@@ -84,8 +87,8 @@ func S(nodes ...Node) Spec {
 }
 
 // convenience helper to quickly make code locations
-func CL(options ...interface{}) types.CodeLocation {
-	cl = types.NewCodeLocation(0)
+func CL(options ...any) types.CodeLocation {
+	cl = types.NewCodeLocation(1)
 	for _, option := range options {
 		if reflect.TypeOf(option).Kind() == reflect.String {
 			cl.FileName = option.(string)

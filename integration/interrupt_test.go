@@ -3,6 +3,7 @@ package integration_test
 import (
 	"encoding/json"
 	"os/exec"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/ginkgo/v2/types"
@@ -11,18 +12,17 @@ import (
 	"github.com/onsi/gomega/gexec"
 )
 
-var _ = Describe("Interrupt and Timeout", func() {
+var _ = Describe("Interrupt and Timeout", MarkSlow, func() {
 	Context("when interrupting a suite", func() {
-		var session *gexec.Session
-		BeforeEach(func() {
+		It("gives the user feedback as the session is interrupted", func() {
 			fm.MountFixture("hanging")
 
 			//we need to signal the actual process, so we must compile the test first
-			session = startGinkgo(fm.PathTo("hanging"), "build")
+			session := startGinkgo(fm.PathTo("hanging"), "build")
 			Eventually(session).Should(gexec.Exit(0))
 
 			//then run the compiled test directly
-			cmd := exec.Command("./hanging.test", "--test.v", "--ginkgo.no-color")
+			cmd := exec.Command("./hanging.test", "--test.v", "--ginkgo.no-color", "--ginkgo.grace-period=2s")
 			cmd.Dir = fm.PathTo("hanging")
 			var err error
 			session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
@@ -30,67 +30,79 @@ var _ = Describe("Interrupt and Timeout", func() {
 
 			Eventually(session).Should(gbytes.Say("Sleeping..."))
 			session.Interrupt()
+			Eventually(session).Should(gbytes.Say(`First interrupt received`))
+			Eventually(session).Should(gbytes.Say("Begin Captured GinkgoWriter Output"))
+			Eventually(session).Should(gbytes.Say("Just beginning"))
+			Eventually(session).Should(gbytes.Say("Almost there..."))
+			Eventually(session).Should(gbytes.Say("Hanging Out"))
+			Eventually(session).Should(gbytes.Say(`goroutine \d+ \[select\]`))
+			Eventually(session).Should(gbytes.Say(`>\s*select {`), "The actual source code gets emitted")
+
+			Eventually(session, time.Second*5).Should(gbytes.Say("Cleaning up once..."), "The two second grace period should move on past the napping node")
+			Eventually(session).Should(gbytes.Say("Cleaning up twice..."))
 			Eventually(session).Should(gbytes.Say("Sleeping again..."))
 			session.Interrupt()
-			Eventually(session, 1000).Should(gexec.Exit(1))
-		})
+			Eventually(session).Should(gbytes.Say(`Second interrupt received`))
+			Eventually(session).Should(gbytes.Say(`goroutine \d+ \[sleep\]`))
+			Eventually(session).Should(gbytes.Say(`>\s*time.Sleep\(time.Hour\)`), "The actual source code gets emitted now")
 
-		It("should emit the contents of the GinkgoWriter", func() {
-			Ω(session).Should(gbytes.Say("Just beginning"))
-			Ω(session).Should(gbytes.Say("Almost there..."))
-			Ω(session).Should(gbytes.Say("Hanging Out"))
-		})
+			Eventually(session).Should(gbytes.Say(`\[INTERRUPTED\]`))
+			Eventually(session).Should(gbytes.Say(`Interrupted by User`))
+			Eventually(session).Should(gbytes.Say(`Spec Goroutine`))
+			Eventually(session).Should(gbytes.Say(`goroutine \d+ \[select\]`))
+			Eventually(session).Should(gbytes.Say(`>\s*select {`), "The actual source code gets emitted now")
+			Eventually(session).Should(gbytes.Say(`Other Goroutines`))
+			Eventually(session).Should(gbytes.Say(`main\.main\(\)`))
 
-		It("should report where the suite was interrupted", func() {
-			Ω(session).Should(gbytes.Say(`\[INTERRUPTED\]`))
-			Ω(session).Should(gbytes.Say(`Interrupted by User`))
-			Ω(session).Should(gbytes.Say(`Here's a stack trace of all running goroutines:`))
-			Ω(session).Should(gbytes.Say(`\[It\] .*hanging_test.go:24`))
-		})
+			Eventually(session).Should(gbytes.Say("Reporting at the end"))
 
-		It("should run the AfterEach and the AfterSuite", func() {
-			Ω(session).Should(gbytes.Say("Cleaning up once..."))
-			Ω(session).Should(gbytes.Say("Cleaning up twice..."))
-			Ω(session).Should(gbytes.Say("Cleaning up thrice..."))
-			Ω(session).Should(gbytes.Say("Heading Out After Suite"))
-		})
-		It("should emit a special failure reason", func() {
-			Ω(session).Should(gbytes.Say("FAIL! - Interrupted by User"))
+			Eventually(session).Should(gbytes.Say(`FAIL! - Interrupted by User`))
+			Eventually(session, time.Second*10).Should(gexec.Exit(1))
+
+			// the last AfterEach and the AfterSuite don't actually run
+			Ω(string(session.Out.Contents())).ShouldNot(ContainSubstring("Cleaning up thrice"))
+			Ω(string(session.Out.Contents())).ShouldNot(ContainSubstring("Heading Out After Suite"))
 		})
 	})
 
 	Context("when the suite times out", func() {
-		var session *gexec.Session
-		BeforeEach(func() {
+		It("interrupts the suite and gives the user feedback as it does so", func() {
 			fm.MountFixture("hanging")
 
-			session = startGinkgo(fm.PathTo("hanging"), "--no-color", "--timeout=5s")
-			Eventually(session).Should(gexec.Exit(1))
-		})
+			//the timeout clock starts before compilation, so compile first lest a slow build eat the timeout
+			session := startGinkgo(fm.PathTo("hanging"), "build")
+			Eventually(session).Should(gexec.Exit(0))
 
-		It("should report where and why the suite was interrupted", func() {
-			Ω(session).Should(gbytes.Say(`\[INTERRUPTED\]`))
-			Ω(session).Should(gbytes.Say(`Interrupted by Timeout`))
-			Ω(session).Should(gbytes.Say(`Here's a stack trace of all running goroutines:`))
-			Ω(session).Should(gbytes.Say(`\[It\] .*hanging_test.go:24`))
-		})
+			session = startGinkgo(fm.PathTo("hanging"), "--no-color", "--timeout=5s", "--grace-period=1s", "./hanging.test")
+			Eventually(session, time.Second*10).Should(gexec.Exit(1))
 
-		It("should run the AfterEach and the AfterSuite", func() {
+			Ω(session).Should(gbytes.Say("Sleeping..."))
+			Ω(session).Should(gbytes.Say("Got your signal, but still taking a nap"), "the timeout has signaled the it to stop, but it's napping...")
+			Ω(session).Should(gbytes.Say("A running node failed to exit in time"), "so we forcibly casue it to exit after the grace-period elapses")
 			Ω(session).Should(gbytes.Say("Cleaning up once..."))
 			Ω(session).Should(gbytes.Say("Cleaning up twice..."))
-			Ω(session).Should(gbytes.Say("Cleaning up thrice..."))
-			Ω(session).Should(gbytes.Say("Heading Out After Suite"))
-		})
+			Ω(session).Should(gbytes.Say("Cleaning up thrice..."), "we manage to get here even though the second after-each gets stuck.  that's thanks to the GracePeriod configuration.")
 
-		It("should emit a special failure reason", func() {
-			Ω(session).Should(gbytes.Say("FAIL! - Interrupted by Timeout"))
+			Ω(session).Should(gbytes.Say(`\[TIMEDOUT\]`))
+			Ω(session).Should(gbytes.Say(`Spec Goroutine`))
+			Ω(session).Should(gbytes.Say(`goroutine \d+ \[select\]`))
+			Ω(session).Should(gbytes.Say(`>\s*select {`), "The actual source code gets emitted now")
+			Ω(session).ShouldNot(gbytes.Say(`Other Goroutines`))
+
+			Ω(session).Should(gbytes.Say("FAIL! - Suite Timeout Elapsed"))
 		})
 	})
 
 	Describe("applying the timeout to multiple suites", func() {
 		It("tracks the timeout across the suites, decrementing the available timeout for each individual suite, and reports on any suites that did not run because the timeout elapsed", Label("slow"), func() {
 			fm.MountFixture("timeout")
-			session := startGinkgo(fm.PathTo("timeout"), "--no-color", "-r", "--timeout=10s", "--keep-going", "--json-report=out.json")
+
+			//the timeout clock starts before compilation, so compile first lest slow builds eat the timeout
+			session := startGinkgo(fm.PathTo("timeout"), "build", "-r")
+			Eventually(session).Should(gexec.Exit(0))
+
+			session = startGinkgo(fm.PathTo("timeout"), "--no-color", "--timeout=10s", "--keep-going", "--json-report=out.json",
+				"./timeout_A/timeout_A.test", "./timeout_B/timeout_B.test", "./timeout_C/timeout_C.test", "./timeout_D/timeout_D.test")
 			Eventually(session).Should(gbytes.Say("TimeoutA Suite"))
 			Eventually(session, "15s").Should(gexec.Exit(1))
 			Ω(session).Should(gbytes.Say(`timeout_D ./timeout_D \[Suite did not run because the timeout elapsed\]`))

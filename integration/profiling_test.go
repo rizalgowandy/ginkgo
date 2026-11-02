@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
@@ -53,7 +54,7 @@ func ParseProfile(binary string, path string) ProfileLines {
 		var cumStat float64
 		if strings.Contains(cumStatEntry, "MB") {
 			var err error
-			cumStat, err = strconv.ParseFloat(strings.TrimRight(cumStatEntry, "MB"), 64)
+			cumStat, err = strconv.ParseFloat(strings.TrimSuffix(cumStatEntry, "MB"), 64)
 			ExpectWithOffset(1, err).ShouldNot(HaveOccurred())
 		} else {
 			duration, err := time.ParseDuration(cumStatEntry)
@@ -70,7 +71,7 @@ func ParseProfile(binary string, path string) ProfileLines {
 	return out
 }
 
-var _ = Describe("Profiling Specs", func() {
+var _ = Describe("Profiling Specs", MarkSlow, func() {
 	Describe("Measuring code coverage", func() {
 		BeforeEach(func() {
 			fm.MountFixture("coverage")
@@ -83,7 +84,7 @@ var _ = Describe("Profiling Specs", func() {
 		}
 
 		Context("when running a single package in series or in parallel with -cover", func() {
-			It("emits the coverage pecentage and generates a cover profile", func() {
+			It("emits the coverage percentage and generates a cover profile", func() {
 				seriesSession := startGinkgo(fm.PathTo("coverage"), "--no-color", "-cover")
 				Eventually(seriesSession).Should(gexec.Exit(0))
 				Ω(seriesSession.Out).Should(gbytes.Say(`coverage: 80\.0% of statements`))
@@ -104,13 +105,28 @@ var _ = Describe("Profiling Specs", func() {
 				coverPkgFlag := fmt.Sprintf("-coverpkg=%s,%s", fm.PackageNameFor("coverage"), fm.PackageNameFor("coverage/external_coverage"))
 				seriesSession := startGinkgo(fm.PathTo("coverage"), coverPkgFlag)
 				Eventually(seriesSession).Should(gexec.Exit(0))
-				Ω(seriesSession.Out).Should(gbytes.Say("coverage: 71.4% of statements in"))
+				Ω(seriesSession.Out).Should(gbytes.Say(`coverage: (80\.0|71\.4)% of statements in`))
 				seriesCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
 				fm.RemoveFile("coverage", "coverprofile.out")
 
 				parallelSession := startGinkgo(fm.PathTo("coverage"), "--no-color", "--procs=2", coverPkgFlag)
 				Eventually(parallelSession).Should(gexec.Exit(0))
-				Ω(parallelSession.Out).Should(gbytes.Say(`coverage: 71\.4% of statements`))
+				Ω(parallelSession.Out).Should(gbytes.Say(`coverage: (80\.0|71\.4)% of statements`))
+				parallelCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
+
+				Ω(parallelCoverage).Should(Equal(seriesCoverage))
+			})
+
+			It("supports ./...", func() {
+				seriesSession := startGinkgo(fm.PathTo("coverage"), "-coverpkg=./...", "-r")
+				Eventually(seriesSession).Should(gexec.Exit(0))
+				Ω(seriesSession.Out).Should(gbytes.Say(`composite coverage: 100\.0% of statements`))
+				seriesCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
+				fm.RemoveFile("coverage", "coverprofile.out")
+
+				parallelSession := startGinkgo(fm.PathTo("coverage"), "--no-color", "--procs=2", "-coverpkg=./...", "-r")
+				Eventually(parallelSession).Should(gexec.Exit(0))
+				Ω(parallelSession.Out).Should(gbytes.Say(`composite coverage: 100\.0% of statements`))
 				parallelCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
 
 				Ω(parallelCoverage).Should(Equal(seriesCoverage))
@@ -124,6 +140,12 @@ var _ = Describe("Profiling Specs", func() {
 				Ω(session.Out).Should(gbytes.Say(`coverage: 80\.0% of statements`))
 				Ω(fm.PathTo("coverage", "myprofile.out")).Should(BeAnExistingFile())
 				Ω(fm.PathTo("coverage", "coverprofile.out")).ShouldNot(BeAnExistingFile())
+			})
+
+			It("fails if the cover profile is not just a filename", func() {
+				session := startGinkgo(fm.PathTo("coverage"), "--no-color", "-coverprofile=/path/to/profile.out")
+				Eventually(session).Should(gexec.Exit(1))
+				Ω(session.Err).Should(gbytes.Say(`--coverprofile expects a filename but was given a path: /path/to/profile.out`))
 			})
 		})
 
@@ -181,7 +203,7 @@ var _ = Describe("Profiling Specs", func() {
 			})
 
 			Context("when -keep-separate-coverprofiles is set", func() {
-				It("puts namespaced coverprofiels in the -output-dir", func() {
+				It("puts namespaced coverprofiles in the -output-dir", func() {
 					session := startGinkgo(fm.PathTo("combined_coverage"), "--no-color", "--cover", "-r", "--procs=2", "--output-dir=./output", "--keep-separate-coverprofiles")
 					Eventually(session).Should(gexec.Exit(0))
 					Ω(fm.PathTo("combined_coverage", "output/coverprofile.out")).ShouldNot(BeAnExistingFile())
@@ -218,7 +240,7 @@ var _ = Describe("Profiling Specs", func() {
 				Ω(cpuProfile.FindCaller("slow_memory_hog.SomethingExpensive").Index).Should(BeNumerically("<=", 10))
 
 				memProfile := ParseProfile(pathToBinary("slow_memory_hog"), pathToProfile("slow_memory_hog", "mem.out"))
-				// The MemProifle for the slow_memory_hog test should list the slow_memory_hog.SomethingExpensive functions as one of the most memory-consuming functions
+				// The MemProfile for the slow_memory_hog test should list the slow_memory_hog.SomethingExpensive functions as one of the most memory-consuming functions
 				// Assrting on the amount of memory consumed should be stable across tests as the function always builds a large array of this size
 				Ω(memProfile.FindCaller("slow_memory_hog.SomethingExpensive").CumStat).Should(BeNumerically(">=", 200))
 
@@ -236,13 +258,14 @@ var _ = Describe("Profiling Specs", func() {
 				// The MutexProfile for the lock_contest test should list two functions that wait on a lock.
 				// Unfortunately go doesn't seem to capture the names of the functions - so they're listed here as
 				// lock_contest_test.glob..func1.1 is called 10 times and takes ~5ms per call
-				// lock_contest_test.glob..func2.1 is called once and teakes ~500ms per call
+				// lock_contest_test.glob..func2.1 is called once and takes ~500ms per call
+				// Note that in Go 1.22 and later, the functions are called lock_contest_test.init.func1.1 and lock_contest_test.init.func2.1
 				// Asserting that both times are within a range should be stable across tests.  The function names should be as well
 				// but that might become a source of failure in the future
 				// Note: these numbers are adjusted slightly to tolerate variance during test runs
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func1.1").CumStat).Should(BeNumerically(">=", 45))
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func1.1").CumStat).Should(BeNumerically("<", 500))
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func2.1").CumStat).Should(BeNumerically(">=", 450))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc1.1", lockContestPrefix)).CumStat).Should(BeNumerically(">=", 45))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc1.1", lockContestPrefix)).CumStat).Should(BeNumerically("<", 500))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc2.1", lockContestPrefix)).CumStat).Should(BeNumerically(">=", 450))
 			},
 
 			Entry("when running in series",
@@ -278,6 +301,152 @@ var _ = Describe("Profiling Specs", func() {
 		})
 	})
 
+	Context("when a suite has programmatic focus", func() {
+		BeforeEach(func() {
+			fm.MountFixture("focused")
+			fm.MountFixture("coverage")
+		})
+
+		Context("and running in series", func() {
+			It("lets the user know that the test was focused so no profiles were generated", func() {
+				session := startGinkgo(fm.PathTo("focused"), "--no-color", "--cover", "--blockprofile=block.out", "--cpuprofile=cpu.out", "--memprofile=mem.out", "--mutexprofile=mutex.out")
+				Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+				Ω(session).ShouldNot(gbytes.Say("could not finalize profiles"))
+				Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no composite coverage computed: all suites included programatically focused specs"))
+				Ω(fm.PathTo("focused", "coverprofile.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "block.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "mem.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "mutex.out")).ShouldNot(BeAnExistingFile())
+			})
+		})
+
+		Context("and running in parallel", func() {
+			It("lets the user know that the test was focused so no profiles were generated", func() {
+				session := startGinkgo(fm.PathTo("focused"), "--no-color", "--procs=2", "--cover", "--blockprofile=block.out", "--cpuprofile=cpu.out", "--memprofile=mem.out", "--mutexprofile=mutex.out")
+				Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+				Ω(session).ShouldNot(gbytes.Say("could not finalize profiles"))
+				Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no composite coverage computed: all suites included programatically focused specs"))
+				Ω(fm.PathTo("focused", "coverprofile.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "block.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "mem.out")).ShouldNot(BeAnExistingFile())
+				Ω(fm.PathTo("focused", "mutex.out")).ShouldNot(BeAnExistingFile())
+			})
+		})
+
+		Context("and keeping coverage reports separate", func() {
+			It("lets the user know", func() {
+				session := startGinkgo(fm.TmpDir, "-r", "--no-color", "--cover", "--blockprofile=block.out", "--cpuprofile=cpu.out", "--memprofile=mem.out", "--mutexprofile=mutex.out", "--keep-separate-coverprofiles", "--output-dir=./output")
+				Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+				Ω(session).Should(gbytes.Say("CoverageFixture Suite"))
+				Ω(session).Should(gbytes.Say("coverage: 80"))
+
+				Ω(session).Should(gbytes.Say("Focused Suite"))
+				Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+				Ω(session).Should(gbytes.Say("Focused Suite"))
+				Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+				Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+				Ω(session).ShouldNot(gbytes.Say("composite coverage"))
+				Ω(fm.ListDir("output")).Should(ConsistOf(
+					"coverage.test", "coverage_block.out", "coverage_coverprofile.out", "coverage_cpu.out", "coverage_mem.out", "coverage_mutex.out",
+					"focused.test", "focused_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+					"focused_internal.test", "focused_internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+					"coverage_additional_spec.test",
+					"coverage_additional_spec_block.out",
+					"coverage_additional_spec_coverprofile.out",
+					"coverage_additional_spec_cpu.out",
+					"coverage_additional_spec_mem.out",
+					"coverage_additional_spec_mutex.out"))
+			})
+		})
+
+		Context("and combining coverage reports", func() {
+			Context("and no suites generate coverage", func() {
+				It("lets the user know", func() {
+					session := startGinkgo(fm.PathTo("focused"), "-r", "--no-color", "--cover", "--blockprofile=block.out", "--cpuprofile=cpu.out", "--memprofile=mem.out", "--mutexprofile=mutex.out", "--output-dir=./output")
+					Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+					Ω(session).ShouldNot(gbytes.Say("CoverageFixture Suite"))
+
+					Ω(session).Should(gbytes.Say("Focused Suite"))
+					Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+					Ω(session).Should(gbytes.Say("Focused Suite"))
+					Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+					Ω(session).Should(gbytes.Say("no composite coverage computed: all suites included programatically focused specs"))
+
+					Ω(fm.ListDir("focused", "output")).Should(ConsistOf(
+						"focused.test", "focused_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+						"internal.test", "internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+					))
+				})
+			})
+
+			Context("and at least one suite generates coverage", func() {
+				It("lets the user know", func() {
+					session := startGinkgo(fm.TmpDir, "-r", "--no-color", "--cover", "--blockprofile=block.out", "--cpuprofile=cpu.out", "--memprofile=mem.out", "--mutexprofile=mutex.out", "--output-dir=./output")
+					Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+					Ω(session).Should(gbytes.Say("CoverageFixture Suite"))
+					Ω(session).Should(gbytes.Say("coverage: 80"))
+
+					Ω(session).Should(gbytes.Say("Focused Suite"))
+					Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+					Ω(session).Should(gbytes.Say("Focused Suite"))
+					Ω(session).Should(gbytes.Say("coverage: no coverfile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no block profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no cpu profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mem profile was generated because specs are programmatically focused"))
+					Ω(session).Should(gbytes.Say("no mutex profile was generated because specs are programmatically focused"))
+
+					Ω(session).Should(gbytes.Say("composite coverage: 80.0% of statements however some suites did not contribute because they included programatically focused specs"))
+
+					Ω(fm.ListDir("output")).Should(ConsistOf(
+						"coverprofile.out",
+						"coverage.test", "coverage_block.out", "coverage_cpu.out", "coverage_mem.out", "coverage_mutex.out",
+						"focused.test", "focused_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+						"focused_internal.test", "focused_internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty,
+						"coverage_additional_spec.test",
+						"coverage_additional_spec_block.out",
+						"coverage_additional_spec_cpu.out",
+						"coverage_additional_spec_mem.out",
+						"coverage_additional_spec_mutex.out",
+					))
+				})
+			})
+		})
+	})
+
 	Context("with a read-only tree and a readable output-dir", func() {
 		BeforeEach(func() {
 			fm.MountFixture("profile")
@@ -297,7 +466,7 @@ var _ = Describe("Profiling Specs", func() {
 			Ω(os.Chmod(fm.PathTo("profile", "slow_memory_hog"), 0755)).Should(Succeed())
 		})
 
-		It("never tries to write to the tree, and only emits to ouput-dir", func() {
+		It("never tries to write to the tree, and only emits to output-dir", func() {
 			sess := startGinkgo(fm.PathTo("profile"),
 				"--output-dir=../output",
 				"--cpuprofile=cpu.out",
@@ -306,6 +475,7 @@ var _ = Describe("Profiling Specs", func() {
 				"--mutexprofile=mutex.out",
 				"--coverprofile=cover.out",
 				"--json-report=report.json",
+				"--gojson-report=report.go.json",
 				"--junit-report=report.xml",
 				"--teamcity-report=report.tm",
 				"--procs=2",
@@ -317,6 +487,7 @@ var _ = Describe("Profiling Specs", func() {
 			Ω(fm.ListDir("output")).Should(ConsistOf(
 				"cover.out",
 				"report.json",
+				"report.go.json",
 				"report.xml",
 				"report.tm",
 				"block_contest_cpu.out",
@@ -337,7 +508,7 @@ var _ = Describe("Profiling Specs", func() {
 			))
 		})
 
-		It("also works when keeping separate reports and profiles and only emits to ouput-dir", func() {
+		It("also works when keeping separate reports and profiles and only emits to output-dir", func() {
 			sess := startGinkgo(fm.PathTo("profile"),
 				"--output-dir=../output",
 				"--cpuprofile=cpu.out",
@@ -346,6 +517,7 @@ var _ = Describe("Profiling Specs", func() {
 				"--mutexprofile=mutex.out",
 				"--coverprofile=cover.out",
 				"--json-report=report.json",
+				"--gojson-report=report.go.json",
 				"--junit-report=report.xml",
 				"--teamcity-report=report.tm",
 				"--procs=2",
@@ -363,6 +535,9 @@ var _ = Describe("Profiling Specs", func() {
 				"block_contest_report.json",
 				"lock_contest_report.json",
 				"slow_memory_hog_report.json",
+				"block_contest_report.go.json",
+				"lock_contest_report.go.json",
+				"slow_memory_hog_report.go.json",
 				"block_contest_report.xml",
 				"lock_contest_report.xml",
 				"slow_memory_hog_report.xml",
